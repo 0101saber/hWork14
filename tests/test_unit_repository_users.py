@@ -1,66 +1,62 @@
 import unittest
-from unittest.mock import MagicMock, AsyncMock, Mock
+from unittest.mock import MagicMock, AsyncMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.entity.models import Todo, User
-from src.schemas.todo import TodoSchema, TodoUpdateSchema
-from src.repository.todos import create_todo, get_all_todos, get_todo, update_todo, delete_todo, get_todos
+from src.entity.model import User
+from src.schemas.user import UserSchema
+from src.repository.users import get_user_by_email, create_user, update_token, confirmed_email
 
 
-class TestAsyncTodo(unittest.IsolatedAsyncioTestCase):
+class TestAsyncUsers(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
-        self.user = User(id=1, username='test_user', password="qwerty", confirmed=True)
+        self.user = User(
+            id=1,
+            username="test_user",
+            email="test@example.com",
+            password="hashed_password",
+            confirmed=False
+        )
         self.session = AsyncMock(spec=AsyncSession)
 
-    async def test_get_all_todos(self):
-        limit = 10
-        offset = 0
-        todos = [Todo(id=1, title='test_title_1', description='test_description_1', user=self.user),
-                 Todo(id=2, title='test_title_2', description='test_description_2', user=self.user)]
-        mocked_todos = MagicMock()
-        mocked_todos.scalars.return_value.all.return_value = todos
-        self.session.execute.return_value = mocked_todos
-        result = await get_all_todos(limit, offset, self.session)
-        self.assertEqual(result, todos)
+    async def test_get_user_by_email(self):
+        email = "test@example.com"
+        mocked_user = MagicMock()
+        mocked_user.scalar_one_or_none.return_value = self.user
+        self.session.execute.return_value = mocked_user
 
-    async def test_get_todos(self):
-        limit = 10
-        offset = 0
-        todos = [Todo(id=1, title='test_title_1', description='test_description_1', user=self.user),
-                 Todo(id=2, title='test_title_2', description='test_description_2', user=self.user)]
-        mocked_todos = Mock()
-        mocked_todos.scalars.return_value.all.return_value = todos
-        self.session.execute.return_value = mocked_todos
-        result = await get_todos(limit, offset, self.session, self.user)
-        self.assertEqual(result, todos)
+        result = await get_user_by_email(email, self.session)
+        self.assertEqual(result, self.user)
 
-    async def test_create_todo(self):
-        body = TodoSchema(title='test_title', description='test_description')
-        result = await create_todo(body, self.session, self.user)
-        self.assertIsInstance(result, Todo)
-        self.assertEqual(result.title, body.title)
-        self.assertEqual(result.description, body.description)
+    async def test_create_user(self):
+        body = UserSchema(
+            username="new_user",
+            email="new_user@example.com",
+            password="new_password"
+        )
 
-    async def test_update_todo(self):
-        body = TodoUpdateSchema(title='test_title', description='test_description', completed=True)
-        mocked_todo = MagicMock()
-        mocked_todo.scalar_one_or_none.return_value = Todo(id=1, title='test_title', description='test_description',
-                                                           user=self.user)
-        self.session.execute.return_value = mocked_todo
-        result = await update_todo(1, body, self.session, self.user)
-        self.assertIsInstance(result, Todo)
-        self.assertEqual(result.title, body.title)
-        self.assertEqual(result.description, body.description)
-
-    async def test_delete_todo(self):
-        mocked_todo = MagicMock()
-        mocked_todo.scalar_one_or_none.return_value = Todo(id=1, title='test_title', description='test_description',
-                                                           user=self.user)
-        self.session.execute.return_value = mocked_todo
-        result = await delete_todo(1, self.session, self.user)
-        self.session.delete.assert_called_once()
+        result = await create_user(body, self.session)
+        self.assertIsInstance(result, User)
+        self.assertEqual(result.email, body.email)
+        self.assertEqual(result.username, body.username)
+        self.session.add.assert_called_once()
         self.session.commit.assert_called_once()
 
-        self.assertIsInstance(result, Todo)
+    async def test_update_token(self):
+        token = "new_refresh_token"
+        await update_token(self.user, token, self.session)
+
+        self.assertEqual(self.user.refresh_token, token)
+        self.session.commit.assert_called_once()
+
+    async def test_confirmed_email(self):
+        email = "test@example.com"
+        mocked_user = MagicMock()
+        mocked_user.scalar_one_or_none.return_value = self.user
+        self.session.execute.return_value = mocked_user
+
+        await confirmed_email(email, self.session)
+
+        self.assertTrue(self.user.confirmed)
+        self.session.commit.assert_called_once()
